@@ -6,6 +6,7 @@ import (
 
 	"github.com/elimity-com/scim/errors"
 	"github.com/elimity-com/scim/optional"
+	"github.com/scim2/filter-parser"
 )
 
 // Schema is a collection of attribute definitions that describe the contents of an entire or partial resource.
@@ -52,11 +53,11 @@ func (s Schema) ValidatePatchOperationValue(operation string, operationValue map
 		var attr *CoreAttribute
 		scimErr := errors.ValidationErrorNil
 
-		for _, attribute := range s.Attributes {
-			if strings.EqualFold(attribute.name, k) {
-				attr = &attribute
-				break
-			}
+		// Add support for complex paths like
+		// name.familyName
+		attr, err := findAttribute(operation, k, s.Attributes)
+		if err != errors.ValidationErrorNil {
+			return err
 		}
 
 		// Attribute does not exist in the schema, thus it is an invalid request.
@@ -76,6 +77,30 @@ func (s Schema) ValidatePatchOperationValue(operation string, operationValue map
 	}
 
 	return errors.ValidationErrorNil
+}
+
+func findAttribute(operation, path string, attributes []CoreAttribute) (*CoreAttribute, errors.ValidationError) {
+	parser := filter.NewParser(strings.NewReader(path))
+	p, err := parser.ParsePath()
+	if err != nil {
+		return nil, errors.ValidationErrorInvalidValue
+	}
+
+	for _, attr := range attributes {
+		if strings.EqualFold(attr.name, p.AttributeName) {
+			// If parent cannot be patch, we should not be able to patch the
+			// children.
+			if cannotBePatched(operation, attr) {
+				return nil, errors.ValidationErrorInvalidValue
+			}
+			if p.SubAttribute != "" && len(attr.subAttributes) > 0 {
+				return findAttribute(operation, p.SubAttribute, attr.subAttributes)
+			}
+			return &attr, errors.ValidationErrorNil
+		}
+	}
+
+	return nil, errors.ValidationErrorInvalidValue
 }
 
 func cannotBePatched(op string, attr CoreAttribute) bool {

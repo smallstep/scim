@@ -122,8 +122,11 @@ func (t ResourceType) validatePatch(r *http.Request) (PatchRequest, errors.Valid
 		return req, errors.ValidationErrorInvalidValue
 	}
 
-	for _, op := range req.Operations {
-		errorCauses = append(errorCauses, t.validateOperation(op)...)
+	for i, op := range req.Operations {
+		// Add compatibility with Azure AD SCIM implementation that uses operations
+		// Add, Replace and Remove
+		req.Operations[i].Op = strings.ToLower(op.Op)
+		errorCauses = append(errorCauses, t.validateOperation(req.Operations[i])...)
 	}
 
 	// Denotes all of the errors that have occurred parsing the request.
